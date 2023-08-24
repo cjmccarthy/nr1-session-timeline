@@ -25,7 +25,7 @@ class SearchBarContainer extends React.Component {
       duration,
       config: { searchAttribute, groupingAttribute, rootEvent: event },
     } = this.props
-    const nrql = `FROM ${event} SELECT uniques(${searchAttribute}) WHERE entityGuid='${entity.guid}' AND ${searchAttribute} like '%${searchTerm}%' and ${groupingAttribute} is not null ${duration.since} `
+    const nrql = `FROM ${event} SELECT uniques(${searchAttribute}) WHERE ${searchAttribute} like '%${searchTerm}%' and ${groupingAttribute} is not null ${duration.since} `
 
     const query = `{
       actor {

@@ -1,7 +1,7 @@
 {
   "schemaType": "NERDLET",
   "id": "nr1-session-timeline-nerdlet",
-  "displayName": "Session Timeline",
+  "displayName": "Session Timeline DZ",
   "description": "",
   "context": {
     "entities": [

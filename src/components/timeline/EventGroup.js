@@ -142,16 +142,58 @@ const groups = [
     actionNames: ['MobileCrash'],
   },
   {
+    name: 'CDN',
+    eventDisplay: {
+      class: 'timeline-item-type-custom',
+      icon: Icon.TYPE.HARDWARE_AND_SOFTWARE__SOFTWARE__CLOUD,
+      label: 'CDN',
+      color: '#FF40B4',
+    },
+    timelineDisplay: {
+      color: '#FF40B4',
+      label: 'CDN',
+    },
+    actionNames: ['CDN_Log'],
+  },
+  {
+    name: 'DATAZOOM',
+    eventDisplay: {
+      class: 'timeline-item-type-custom',
+      icon: Icon.TYPE.INTERFACE__OPERATIONS__PLAY_ALTERNATE__V_ALTERNATE,
+      label: 'Player Activity',
+      color: '#00AC69',
+    },
+    timelineDisplay: {
+      color: '#00FF8C',
+      label: 'Player Activity',
+    },
+    actionNames: ['Datazoom'],
+  },
+  {
+    name: 'HTTP_REQUEST',
+    eventDisplay: {
+      class: 'timeline-item-type-ajax',
+      icon: Icon.TYPE.INTERFACE__ARROW__ARROW_VERTICAL,
+      label: 'Request',
+      color: '#a752d5',
+    },
+    timelineDisplay: {
+      color: '#cea3e6',
+      label: 'Request',
+    },
+    actionNames: ['custom_http_request'],
+  },
+  {
     name: 'CUSTOM',
     eventDisplay: {
       class: 'timeline-item-type-custom',
       icon: Icon.TYPE.INTERFACE__OPERATIONS__SELECTION,
-      label: 'Custom Interaction',
+      label: 'Player/CDN Activity',
       color: '#016911',
     },
     timelineDisplay: {
       color: '#bdf2c6',
-      label: 'Custom Interaction',
+      label: 'Player/CDN Activity',
     },
     actionNames: ['Custom Interaction', 'BrowserTiming'],
   },
@@ -173,9 +215,11 @@ const defaultGroup = {
 }
 
 const eventGroup = event => {
+  //console.log(groups);
   const found = groups.filter(group => {
     return group.actionNames.includes(event)
   })
+  //console.log(found);
   if (found.length > 0) return found[0]
   else {
     console.info('uncategorized event', event)

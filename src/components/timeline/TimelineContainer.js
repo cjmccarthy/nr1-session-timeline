@@ -47,6 +47,7 @@ export default class TimelineContainer extends React.Component {
         }
 
         data = sortBy(data, 'timestamp')
+        //console.log(data)
 
         const legend = this.getLegend(data)
         this.setState({
@@ -64,8 +65,17 @@ export default class TimelineContainer extends React.Component {
   getData = async (eventType, linkingAttributeClause) => {
     const { entityGuid: guid, accountId, sessionDate, duration } = this.props
 
-    const query = `SELECT * from ${eventType} WHERE entityGuid = '${guid}' and dateOf(timestamp) = '${sessionDate}' and ${linkingAttributeClause} ORDER BY timestamp ASC LIMIT MAX ${duration.since}`
+    var query;
+    //console.log(eventType)
+    if (eventType === 'Datazoom'){
+      query = `SELECT * from ${eventType} WHERE dateOf(timestamp) = '${sessionDate}' and ${linkingAttributeClause} ORDER BY timestamp ASC LIMIT MAX ${duration.since}`
+    } 
+    else {
+      query = `SELECT * from ${eventType} WHERE entityGuid = '${guid}' and dateOf(timestamp) = '${sessionDate}' and ${linkingAttributeClause} ORDER BY timestamp ASC LIMIT MAX ${duration.since}`
+    }
+
     const { data } = await NrqlQuery.query({ accountIds: [accountId], query })
+
 
     let totalWarnings = 0
     let result = []
@@ -79,6 +89,15 @@ export default class TimelineContainer extends React.Component {
           event['nr.warnings'] = true
           event['nr.warningConditions'] = warnings
           totalWarnings++
+        }
+
+        if (event['eventType'] === 'Datazoom') {
+          if (event['actionName'] === 'CDN_Log' ) {
+            // event['eventType'] = 'CDN_Log'
+            event['timestamp'] = event['client_ts_ms']
+          }  else if (event['actionName'] === 'custom_http_request') {
+            event['timestamp'] = event['start']
+          }
         }
         return event
       })
@@ -102,7 +121,7 @@ export default class TimelineContainer extends React.Component {
       },
     } = this.props
 
-    let attributeClause = `${groupingAttribute} = '${session}' and ${searchAttribute} = '${filter}'`
+    let attributeClause = `(${groupingAttribute} = '${session}' and ${searchAttribute} = '${filter}')  OR sid = '${filter}'`
     if (linkingAttribute) {
       const query = `SELECT uniques(${linkingAttribute}) from ${event} WHERE entityGuid = '${guid}' and dateOf(timestamp) = '${sessionDate}' and ${groupingAttribute} = '${session}' AND ${searchAttribute} = '${filter}' LIMIT MAX ${duration.since}`
 
@@ -158,7 +177,9 @@ export default class TimelineContainer extends React.Component {
 
   getEventAction = (event, eventType) => {
     let action = ''
-    if (eventType !== 'BrowserInteraction') action = eventType
+    if (event['actionName'] === 'CDN_Log') action = 'CDN_Log'
+    else if (event['actionName'] === 'custom_http_request') action = 'custom_http_request'
+    else if (eventType !== 'BrowserInteraction') action = eventType
     else
       action =
         event.category === 'Custom' ? 'Custom Interaction' : event.category

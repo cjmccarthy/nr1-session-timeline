@@ -96,7 +96,7 @@ export default class Gauge extends Component {
   }
 
   render() {
-    const { data, height, showLegend, legend, legendClick } = this.props
+    const { data, height, showLegend, legend, legendClick, title, showAxis } = this.props
     const displayData = this.proportionateValues()
     const timeAxisValues = this.renderTimeAxis(data)
 
@@ -108,7 +108,7 @@ export default class Gauge extends Component {
           verticalType={Stack.VERTICAL_TYPE.CENTER}
         >
           <StackItem grow>
-            <h4>Session Sequence of Events</h4>
+            <h4>{title}</h4>
           </StackItem>
         </Stack>
 
@@ -126,22 +126,24 @@ export default class Gauge extends Component {
             })}
         </div>
 
-        <Stack
-          directionType={Stack.DIRECTION_TYPE.HORIZONTAL_TYPE}
-          verticalType={Stack.VERTICAL_TYPE.CENTER}
-          className="gaugeTimeline"
-        >
-          <StackItem className="gaugeTimelineItem" key={0}>
-            {0}
-          </StackItem>
-          {timeAxisValues.map((v, index) => {
-            return (
-              <StackItem className="gaugeTimelineItem" shrink key={v + index}>
-                {v}
-              </StackItem>
-            )
-          })}
-        </Stack>
+        {showAxis && (
+          <Stack
+            directionType={Stack.DIRECTION_TYPE.HORIZONTAL_TYPE}
+            verticalType={Stack.VERTICAL_TYPE.CENTER}
+            className="gaugeTimeline"
+          >
+            <StackItem className="gaugeTimelineItem" key={0}>
+              {0}
+            </StackItem>
+            {timeAxisValues.map((v, index) => {
+              return (
+                <StackItem className="gaugeTimelineItem" shrink key={v + index}>
+                  {v}
+                </StackItem>
+              )
+            })}
+          </Stack>
+        )}
 
         {showLegend && (
           <div className="Gauge-legend">
