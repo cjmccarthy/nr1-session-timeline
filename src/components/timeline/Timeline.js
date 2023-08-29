@@ -7,110 +7,182 @@ export default class Timeline extends React.PureComponent {
   buildGauges(data) {
     //console.log(data);
     const playerEvents = []
+    //[[], last timestamp, buffering]
     const requestEvents = []
+    //[[], last timestamp]
     const cdnEvents = []
+    //[[], last timestamp]
+    const ridColors = {}
 
-    let prevPlayerEvent = null
-    let prevRequestEvent = null
-    let prevCdnEvent = null
+    var currentPlayerLine = 0
+    var currentRequestLine = 0
+    var currentCdnLine = 0
 
-    let playerActive = false
-    let requestActive = false
-    let cdnActive = false
+    var globalStartTime = null
+    var globalMaxTime = 0
 
-    let playerStartTime = null
-    let requestStartTime = null
-    let cdnStartTime = null
-
-    let globalStartTime = null
+    const overlapProtectionMs = 500
 
     data.forEach(result => {
       const sessionGroup = eventGroup(result.eventAction)
 
       if (sessionGroup.name === 'DATAZOOM') {
-        if (!prevPlayerEvent) {
-          prevPlayerEvent = result
-          playerStartTime = result.timestamp
+        if(!globalStartTime) {
+          globalStartTime = result.timestamp
+        } 
 
-          if(!globalStartTime) {
-            globalStartTime = result.timestamp
-          } else {
-            this.addEmptySpace(globalStartTime, result.timestamp, globalStartTime, playerEvents)
+        if (result.timestamp > globalMaxTime) {
+          globalMaxTime = result.timestamp
+        }
+
+        if (playerEvents.length == 0) {
+          playerEvents.push({ events : [], lastTimestamp : globalStartTime, buffering : false})
+          if (globalStartTime != result.timestamp) {
+            this.addEmptySpace(globalStartTime, result.timestamp, globalStartTime, playerEvents[0].events)
+            //TODO: -1 hack to try to not init 2 rows on first run
+            playerEvents[0].lastTimestamp = result.timestamp-1
           }
-        } else if (!playerActive) {
-          this.addEmptySpace(globalStartTime, result.timestamp, prevPlayerEvent.timestamp, playerEvents)
-        }
+        } 
 
-        if (result.actionName === 'buffer_start') {
-          playerActive = true
-          this.addToTimeline(globalStartTime, result.timestamp, result.timestamp, sessionGroup, playerEvents)
-        } else if (result.actionName === 'buffer_end') {
-          this.addToTimeline(globalStartTime, result.timestamp, prevPlayerEvent.timestamp, sessionGroup, playerEvents)
-          playerActive = false
+        //need to search all lines for the buffering one and reset to lowest open
+        if (result.actionName === 'buffer_end')
+        {
+          //search for buffering event line
+          playerEvents.forEach((result, line) => {
+            if (playerEvents[line].buffering) {
+              currentPlayerLine = line
+            }
+          })
+          //fill it with color instead of space
+          this.addToTimeline(globalStartTime, result.timestamp, playerEvents[currentPlayerLine].lastTimestamp, sessionGroup, playerEvents[currentPlayerLine].events)
+          //toggle buffer state
+          playerEvents[currentPlayerLine].buffering = false
+          playerEvents[currentPlayerLine].lastTimestamp = result.timestamp + overlapProtectionMs
+
         } else {
-          this.addToTimeline(globalStartTime, result.timestamp, result.timestamp, sessionGroup, playerEvents)
+          //search for the first available line
+          var availableLine = -1
+          playerEvents.forEach((lineData, line) => {
+            //current event is after the last event on a line and that line is not buffering
+            console.log(playerEvents[line].lastTimestamp)
+            console.log(result)
+            if ((playerEvents[line].lastTimestamp < result.timestamp) && !playerEvents[line].buffering) {
+              availableLine = line
+            }
+          })
+          //if none is available, create a new line
+          if (availableLine == -1) {
+            playerEvents.push({ events : [], lastTimestamp : globalStartTime, buffering : false})
+            currentPlayerLine = playerEvents.length-1
+            //fill with empty space from the beginning
+            this.addEmptySpace(globalStartTime, result.timestamp, globalStartTime, playerEvents[currentPlayerLine].events)
+          } else {
+            currentPlayerLine = availableLine
+            //TODO: check if this inserts extra whitespace on first event
+            this.addEmptySpace(globalStartTime, result.timestamp, playerEvents[currentPlayerLine].lastTimestamp, playerEvents[currentPlayerLine].events)
+          }
+          playerEvents[currentPlayerLine].lastTimestamp = result.timestamp + overlapProtectionMs
+          this.addToTimeline(globalStartTime, result.timestamp, result.timestamp, sessionGroup, playerEvents[currentPlayerLine].events)
+
+          if (result.actionName === 'buffer_start') {
+            playerEvents[currentPlayerLine].buffering = true
+          }
         }
-
-
-        prevPlayerEvent = result
 
       } else if (sessionGroup.name === 'HTTP_REQUEST') {
-        if (!prevRequestEvent) {
-          prevRequestEvent = result
-          requestStartTime = result.start
-
-          if(!globalStartTime) {
-            globalStartTime = result.timestamp
-          } else {
-            this.addEmptySpace(globalStartTime, result.timestamp, globalStartTime, requestEvents)
-          }
-        } else if (!requestActive) {
-          this.addEmptySpace(globalStartTime, result.timestamp, prevRequestEvent.timestamp, requestEvents)
+        if(!globalStartTime) {
+          globalStartTime = result.timestamp
+        } 
+        if (result.end > globalMaxTime) {
+          globalMaxTime = result.end
         }
 
-        this.addToTimeline(globalStartTime, result.end, result.start, sessionGroup, requestEvents)
+        if (requestEvents.length == 0) {
+          requestEvents.push({ events : [], lastTimestamp : globalStartTime})
+          if (globalStartTime != result.timestamp) {
+            this.addEmptySpace(globalStartTime, result.timestamp, globalStartTime, requestEvents[0].events)
+            //TODO: -1 hack to try to not init 2 rows on first event
+            requestEvents[0].lastTimestamp = result.timestamp-1
+          }
+        } 
 
-        prevRequestEvent = result
-
+        let availableLine = -1
+        requestEvents.forEach((lineData, line) => {
+          //current event is after the last event on a line
+          if (requestEvents[line].lastTimestamp < result.timestamp ) {
+            availableLine = line
+          }
+        })
+        //if none is available, create a new line
+        if (availableLine == -1) {
+            requestEvents.push({ events : [], lastTimestamp : globalStartTime})
+            currentRequestLine = requestEvents.length-1
+            //fill with empty space from the beginning
+            this.addEmptySpace(globalStartTime, result.timestamp, globalStartTime, requestEvents[currentRequestLine].events)
+        } else {
+          currentRequestLine = availableLine
+          //TODO: check if this inserts extra whitespace on first event
+          this.addEmptySpace(globalStartTime, result.timestamp, requestEvents[currentRequestLine].lastTimestamp, requestEvents[currentRequestLine].events)
+        }
+        requestEvents[currentRequestLine].lastTimestamp = result.end + overlapProtectionMs
+        this.addToTimeline(globalStartTime, result.end, result.timestamp, sessionGroup, requestEvents[currentRequestLine].events)
+ 
       } else if (sessionGroup.name === 'CDN') {
-        if (!prevCdnEvent) {
-          prevCdnEvent = result
-          cdnStartTime = result.timestamp
-
-          if(!globalStartTime) {
-            globalStartTime = result.timestamp
-          } else {
-            this.addEmptySpace(globalStartTime, result.timestamp, globalStartTime, cdnEvents)
-          }
-        } else if (!cdnActive) { 
-          this.addEmptySpace(globalStartTime, result.timestamp, prevCdnEvent.timestamp, cdnEvents)
+        if(!globalStartTime) {
+          globalStartTime = result.timestamp
+        } 
+        if (result.timestamp > globalMaxTime) {
+          globalMaxTime = result.timestamp
         }
 
-        this.addToTimeline(globalStartTime, result.timestap + result.time_to_last_byte_ms, result.timestamp, sessionGroup,  cdnEvents)
+        if (cdnEvents.length == 0) {
+          cdnEvents.push({ events : [], lastTimestamp : globalStartTime})
+          if (globalStartTime != result.timestamp) {
+            this.addEmptySpace(globalStartTime, result.timestamp, globalStartTime, cdnEvents[0].events)
+            //TODO: -1 hack to try to not init 2 rows on first event
+            cdnEvents[0].lastTimestamp = result.timestamp-1
+          }
+        } 
 
-        prevCdnEvent = result
+        let availableLine = -1
+        cdnEvents.forEach((lineData, line) => {
+          //current event is after the last event on a line
+          if (cdnEvents[line].lastTimestamp < result.timestamp ) {
+            availableLine = line
+          }
+        })
+        //if none is available, create a new line
+        if (availableLine == -1) {
+            cdnEvents.push({ events : [], lastTimestamp : globalStartTime})
+            currentCdnLine = cdnEvents.length-1
+            //fill with empty space from the beginning
+            this.addEmptySpace(globalStartTime, result.timestamp, globalStartTime, cdnEvents[currentCdnLine].events)
+        } else {
+          currentCdnLine = availableLine
+          //TODO: check if this inserts extra whitespace on first event
+          this.addEmptySpace(globalStartTime, result.timestamp, cdnEvents[currentCdnLine].lastTimestamp, cdnEvents[currentCdnLine].events)
+        }
+        cdnEvents[currentCdnLine].lastTimestamp = result.timestamp + result.time_to_last_byte_ms
+        this.addToTimeline(globalStartTime, result.time_to_last_byte_ms, result.timestamp, sessionGroup, cdnEvents[currentCdnLine].events)
       }
+      
     })
 
-    const maxTime = Math.max(prevPlayerEvent.timestamp, prevRequestEvent.timestamp, prevCdnEvent.timestamp)
-    console.log(prevPlayerEvent.timestamp, prevRequestEvent.timestamp, prevCdnEvent.timestamp)
-    console.log(maxTime)
-
-    if (prevPlayerEvent.timestamp != maxTime) {
-      this.addEmptySpace(globalStartTime, maxTime, prevPlayerEvent.timestamp, playerEvents)
-    }
-
-    if (prevRequestEvent.timestamp != maxTime) {
-      console.log('Filling Request')
-      console.log(maxTime - prevRequestEvent.end)
-      this.addEmptySpace(globalStartTime, maxTime, prevRequestEvent.end, requestEvents)
-    }
-
-    if (prevCdnEvent.timestamp != maxTime) {
-      console.log('Filling CDN')
-      console.log(maxTime - prevCdnEvent.timestamp)
-      this.addEmptySpace(globalStartTime, maxTime, prevCdnEvent.timestamp+prevCdnEvent.time_to_last_byte_ms, cdnEvents)
-    }
+    playerEvents.forEach(line => {
+      if (line.lastTimestamp < globalMaxTime) {
+        this.addEmptySpace(globalStartTime, globalMaxTime, line.lastTimestamp, line.events)
+      }
+    })
+    requestEvents.forEach(line => {
+      if (line.lastTimestamp < globalMaxTime) {
+        this.addEmptySpace(globalStartTime, globalMaxTime, line.lastTimestamp, line.events)
+      }
+    })
+    cdnEvents.forEach(line => {
+      if (line.lastTimestamp < globalMaxTime) {
+        this.addEmptySpace(globalStartTime, globalMaxTime, line.lastTimestamp, line.events)
+      }
+    })
 
     return [playerEvents, requestEvents, cdnEvents]
   }
@@ -121,6 +193,7 @@ export default class Timeline extends React.PureComponent {
       label: sessionGroup.timelineDisplay.label,
       value: value > 0 ? value : 1,
       color: sessionGroup.timelineDisplay.color,
+      endTime: endTime,
       timeSinceStart: this.getSecondsSinceStart(globalStartTime, startTime),
     }
 
@@ -133,6 +206,7 @@ export default class Timeline extends React.PureComponent {
       label: 'empty',
       value: value > 0 ? value : 1,
       color: '#FFFFFF',
+      endTime: endTime,
       timeSinceStart: this.getSecondsSinceStart(globalStartTime, endTime)
       // warnings: result['nr.warnings'] ? result['nr.warnings'] : false,
     }
@@ -157,20 +231,52 @@ export default class Timeline extends React.PureComponent {
         directionType={Stack.DIRECTION_TYPE.VERTICAL}
         verticalType={Stack.VERTICAL_TYPE.CENTER}
         horizontalType={Stack.HORIZONTAL_TYPE.FILL}
+        spacingType={Stack.SPACING_TYPE.OMIT}
+        gapType={Stack.GAP_TYPE.NONE}
       >
-        <StackItem grow >
-          <Gauge
-            data={streams[0] }
-            height={25}
-            showLegend={false}
-            showAxis={false}
-            legend={legend}
-            legendClick={legendClick}
-            showWarningsOnly={showWarningsOnly}
-            title='Player Events'
-          />
-        </StackItem>
-        <StackItem grow >
+        {streams[0].map(line => { return (
+          <StackItem grow fullWidth shrink>
+            <Gauge
+              data={line.events }
+              height={20}
+              showLegend={false}
+              showAxis={false}
+              legend={legend}
+              legendClick={legendClick}
+              showWarningsOnly={showWarningsOnly}
+              // title='Player Events'
+            />
+          </StackItem>
+        )})}
+        {streams[1].map(line => { return (
+          <StackItem grow fullWidth shrink>
+            <Gauge
+              data={line.events }
+              height={20}
+              showLegend={false}
+              showAxis={false}
+              legend={legend}
+              legendClick={legendClick}
+              showWarningsOnly={showWarningsOnly}
+              // title='Request Events'
+            />
+          </StackItem>
+        )})}
+        {streams[2].map((line, index) => { return (
+          <StackItem grow fullWidth shrink >
+            <Gauge
+              data={line.events}
+              height={20}
+              showLegend={streams[2].length -1 == index}
+              showAxis={streams[2].length -1 == index}
+              legend={legend}
+              legendClick={legendClick}
+              showWarningsOnly={showWarningsOnly}
+              // title='CDN Events'
+            />
+          </StackItem>
+        )})}
+        {/* <StackItem grow >
           <Gauge
             data={streams[1] }
             height={25}
@@ -193,7 +299,7 @@ export default class Timeline extends React.PureComponent {
             showWarningsOnly={showWarningsOnly}
             title='CDN Logs'
           />
-        </StackItem>
+        </StackItem> */}
       </Stack>
     ) : (
       <Stack

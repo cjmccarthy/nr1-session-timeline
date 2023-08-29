@@ -39,14 +39,22 @@ export default class TimelineContainer extends React.Component {
             eventType.name,
             linkingAttributeClause
           )
-          data = data.concat(result)
+          // if (eventType.name === 'Datazoom') {
+          if (false) {
+            const { cdnResult, totalWarnings } = await this.getCdnData(result)
+            data = data.concat([].concat(cdnResult, result))
+          } else {
+            data = data.concat(result)
+          }
           if (totalWarnings > 0) {
             warnings = true
             warningCount += totalWarnings
           }
         }
 
+        data = data.filter(Boolean)
         data = sortBy(data, 'timestamp')
+
         //console.log(data)
 
         const legend = this.getLegend(data)
@@ -69,6 +77,7 @@ export default class TimelineContainer extends React.Component {
     //console.log(eventType)
     if (eventType === 'Datazoom'){
       query = `SELECT * from ${eventType} WHERE dateOf(timestamp) = '${sessionDate}' and ${linkingAttributeClause} ORDER BY timestamp ASC LIMIT MAX ${duration.since}`
+      console.log(query)
     } 
     else {
       query = `SELECT * from ${eventType} WHERE entityGuid = '${guid}' and dateOf(timestamp) = '${sessionDate}' and ${linkingAttributeClause} ORDER BY timestamp ASC LIMIT MAX ${duration.since}`
@@ -76,7 +85,7 @@ export default class TimelineContainer extends React.Component {
 
     const { data } = await NrqlQuery.query({ accountIds: [accountId], query })
 
-
+    const seenRids = []
     let totalWarnings = 0
     let result = []
     if (data && data.length > 0)
@@ -92,9 +101,16 @@ export default class TimelineContainer extends React.Component {
         }
 
         if (event['eventType'] === 'Datazoom') {
+          event['timestamp'] = event['client_ts_ms']
           if (event['actionName'] === 'CDN_Log' ) {
+            if (event['rid']) {
+              if (seenRids.indexOf(event['rid']) >= 0) {
+                return
+              } else {
+                seenRids.push(event['rid'])
+              }
+            }
             // event['eventType'] = 'CDN_Log'
-            event['timestamp'] = event['client_ts_ms']
           }  else if (event['actionName'] === 'custom_http_request') {
             event['timestamp'] = event['start']
           }
@@ -103,6 +119,45 @@ export default class TimelineContainer extends React.Component {
       })
 
     return { result, totalWarnings }
+  }
+
+  getCdnData = async (dzData) => {
+    const { entityGuid: guid, accountId, sessionDate, duration } = this.props
+
+    const clientIp = dzData[0].client_ip
+    const minTimestamp = dzData[0]['timestamp']
+    const maxTimestamp = dzData[dzData.length - 1]['timestamp']
+    const eventType = 'Datazoom'
+
+    const cdnQuery = `SELECT * from Datazoom WHERE dateOf(timestamp) = '${sessionDate}' and actionName = 'CDN_Log' and (rid is null OR rid = '' OR sid is null OR sid = '') AND client_ip = '${clientIp}' ORDER BY timestamp ASC LIMIT MAX SINCE ${minTimestamp} UNTIL ${maxTimestamp}`
+
+    const { data } = await NrqlQuery.query({ accountIds: [accountId], query: cdnQuery })
+
+    let totalWarnings = 0
+    let cdnResult = []
+    if (data && data.length > 0) {
+      cdnResult = data[0].data.map(event => {
+        event['eventType'] = eventType
+        event['eventAction'] = this.getEventAction(event, eventType)
+
+        const warnings = this.getWarningConditions(event, eventType)
+        if (warnings && warnings.length > 0) {
+          event['nr.warnings'] = true
+          event['nr.warningConditions'] = warnings
+          totalWarnings++
+        }
+
+        if (event['eventType'] === 'Datazoom') {
+            event['timestamp'] = event['client_ts_ms']
+          if (event['actionName'] === 'custom_http_request') {
+            event['timestamp'] = event['start']
+          }
+        }
+        return event
+      })
+    }
+
+    return { cdnResult, totalWarnings }
   }
 
   getLinkingClause = async () => {
@@ -190,6 +245,7 @@ export default class TimelineContainer extends React.Component {
   getLegend = data => {
     const legend = []
     for (let row of data) {
+      console.log(row)
       const group = eventGroup(row.eventAction)
       const found = legend.filter(item => item.group.name === group.name)
 

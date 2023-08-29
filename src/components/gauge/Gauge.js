@@ -84,14 +84,19 @@ export default class Gauge extends Component {
   }
 
   renderTimeAxis(data) {
-    const numberOfAxisValues = 12
+    const numberOfAxisValues = 6 
     const desiredAxisItems = [...Array(numberOfAxisValues).keys()]
 
-    const timeValues = data.map(d => d.timeSinceStart)
+    const timeValues = data.map(d => d.endTime)
     const maxTime = Math.ceil(timeValues[timeValues.length - 1])
-    const intervalSize = maxTime / numberOfAxisValues
+    console.log(maxTime)
+    const minTime = Math.ceil(timeValues[0])
+    console.log(minTime)
+    const intervalSize = (maxTime - minTime) / numberOfAxisValues
+    console.log(intervalSize)
 
-    const timeAxisValues = desiredAxisItems.map(a => (a + 1) * intervalSize)
+    const timeAxisValues = desiredAxisItems.map(a => minTime + (a + 1) * intervalSize)
+    console.log(timeAxisValues)
     return timeAxisValues
   }
 
