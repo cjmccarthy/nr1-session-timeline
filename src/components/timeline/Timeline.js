@@ -5,14 +5,14 @@ import eventGroup from './EventGroup'
 
 export default class Timeline extends React.PureComponent {
   buildGauges(data) {
-    //console.log(data);
     const playerEvents = []
     //[[], last timestamp, buffering]
     const requestEvents = []
     //[[], last timestamp]
     const cdnEvents = []
     //[[], last timestamp]
-    const ridColors = {}
+    const ridColors = ['#1DCAD3', '#FF8300', '#03dffc', '#9003fc', '#5fa173']
+    const activeRids = {}
 
     var currentPlayerLine = 0
     var currentRequestLine = 0
@@ -21,11 +21,11 @@ export default class Timeline extends React.PureComponent {
     var globalStartTime = null
     var globalMaxTime = 0
 
-    const overlapProtectionMs = 500
+    const overlapProtectionMs = 100
+    const playerEventMinMs = 100
 
     data.forEach(result => {
       const sessionGroup = eventGroup(result.eventAction)
-
       if (sessionGroup.name === 'DATAZOOM') {
         if(!globalStartTime) {
           globalStartTime = result.timestamp
@@ -53,8 +53,9 @@ export default class Timeline extends React.PureComponent {
               currentPlayerLine = line
             }
           })
-          //fill it with color instead of space
-          this.addToTimeline(globalStartTime, result.timestamp, playerEvents[currentPlayerLine].lastTimestamp, sessionGroup, playerEvents[currentPlayerLine].events)
+          //fill it with buffer color instead of space
+          this.addToTimeline(globalStartTime, result.timestamp,
+            playerEvents[currentPlayerLine].lastTimestamp, sessionGroup, playerEvents[currentPlayerLine].events, '#1CE783')
           //toggle buffer state
           playerEvents[currentPlayerLine].buffering = false
           playerEvents[currentPlayerLine].lastTimestamp = result.timestamp + overlapProtectionMs
@@ -64,8 +65,6 @@ export default class Timeline extends React.PureComponent {
           var availableLine = -1
           playerEvents.forEach((lineData, line) => {
             //current event is after the last event on a line and that line is not buffering
-            console.log(playerEvents[line].lastTimestamp)
-            console.log(result)
             if ((playerEvents[line].lastTimestamp < result.timestamp) && !playerEvents[line].buffering) {
               availableLine = line
             }
@@ -81,12 +80,18 @@ export default class Timeline extends React.PureComponent {
             //TODO: check if this inserts extra whitespace on first event
             this.addEmptySpace(globalStartTime, result.timestamp, playerEvents[currentPlayerLine].lastTimestamp, playerEvents[currentPlayerLine].events)
           }
-          playerEvents[currentPlayerLine].lastTimestamp = result.timestamp + overlapProtectionMs
-          this.addToTimeline(globalStartTime, result.timestamp, result.timestamp, sessionGroup, playerEvents[currentPlayerLine].events)
-
           if (result.actionName === 'buffer_start') {
             playerEvents[currentPlayerLine].buffering = true
+            playerEvents[currentPlayerLine].lastTimestamp = result.timestamp + playerEventMinMs + overlapProtectionMs
+            this.addToTimeline(globalStartTime, result.timestamp + playerEventMinMs,
+               result.timestamp, sessionGroup, playerEvents[currentPlayerLine].events, '#1CE783')
+          } else {
+            playerEvents[currentPlayerLine].lastTimestamp = result.timestamp + playerEventMinMs + overlapProtectionMs
+            this.addToTimeline(globalStartTime, result.timestamp + playerEventMinMs, result.timestamp, sessionGroup, playerEvents[currentPlayerLine].events)
+            this.addEmptySpace(globalMaxTime, result.timestamp + playerEventMinMs + overlapProtectionMs, result.timestamp + playerEventMinMs , playerEvents[currentPlayerLine].events )
           }
+
+          
         }
 
       } else if (sessionGroup.name === 'HTTP_REQUEST') {
@@ -125,14 +130,19 @@ export default class Timeline extends React.PureComponent {
           this.addEmptySpace(globalStartTime, result.timestamp, requestEvents[currentRequestLine].lastTimestamp, requestEvents[currentRequestLine].events)
         }
         requestEvents[currentRequestLine].lastTimestamp = result.end + overlapProtectionMs
-        this.addToTimeline(globalStartTime, result.end, result.timestamp, sessionGroup, requestEvents[currentRequestLine].events)
+        if (result.url.includes('penthera')) {
+          this.addToTimeline(globalStartTime, result.end, result.timestamp, sessionGroup, requestEvents[currentRequestLine].events, '#660bb5')
+        } else {
+          this.addToTimeline(globalStartTime, result.end, result.timestamp, sessionGroup, requestEvents[currentRequestLine].events)
+        }
+        this.addEmptySpace(globalMaxTime, result.end + overlapProtectionMs, result.end, requestEvents[currentRequestLine].events )
  
       } else if (sessionGroup.name === 'CDN') {
         if(!globalStartTime) {
           globalStartTime = result.timestamp
         } 
-        if (result.timestamp > globalMaxTime) {
-          globalMaxTime = result.timestamp
+        if (result.client_ts_ms > globalMaxTime) {
+          globalMaxTime = result.client_ts_ms
         }
 
         if (cdnEvents.length == 0) {
@@ -140,7 +150,7 @@ export default class Timeline extends React.PureComponent {
           if (globalStartTime != result.timestamp) {
             this.addEmptySpace(globalStartTime, result.timestamp, globalStartTime, cdnEvents[0].events)
             //TODO: -1 hack to try to not init 2 rows on first event
-            cdnEvents[0].lastTimestamp = result.timestamp-1
+            cdnEvents[0].lastTimestamp = result.client_ts_ms-1
           }
         } 
 
@@ -162,8 +172,9 @@ export default class Timeline extends React.PureComponent {
           //TODO: check if this inserts extra whitespace on first event
           this.addEmptySpace(globalStartTime, result.timestamp, cdnEvents[currentCdnLine].lastTimestamp, cdnEvents[currentCdnLine].events)
         }
-        cdnEvents[currentCdnLine].lastTimestamp = result.timestamp + result.time_to_last_byte_ms
-        this.addToTimeline(globalStartTime, result.time_to_last_byte_ms, result.timestamp, sessionGroup, cdnEvents[currentCdnLine].events)
+        cdnEvents[currentCdnLine].lastTimestamp = result.client_ts_ms + overlapProtectionMs
+        this.addToTimeline(globalStartTime, result.client_ts_ms, result.timestamp, sessionGroup, cdnEvents[currentCdnLine].events)
+        this.addEmptySpace(globalStartTime, result.client_ts_ms + overlapProtectionMs, result.client_ts_ms, cdnEvents[currentCdnLine].events )
       }
       
     })
@@ -184,15 +195,16 @@ export default class Timeline extends React.PureComponent {
       }
     })
 
-    return [playerEvents, requestEvents, cdnEvents]
+    return { events: [playerEvents, requestEvents, cdnEvents], globalMaxTime: globalMaxTime, globalMinTime : globalStartTime}
   }
 
-  addToTimeline(globalStartTime, endTime, startTime, sessionGroup, timeline) {
+  addToTimeline(globalStartTime, endTime, startTime, sessionGroup, timeline, overrideColor) {
     const value = endTime - startTime
     const eventStreamItem = {
       label: sessionGroup.timelineDisplay.label,
       value: value > 0 ? value : 1,
-      color: sessionGroup.timelineDisplay.color,
+      color: overrideColor ? overrideColor : sessionGroup.timelineDisplay.color,
+      startTime: startTime,
       endTime: endTime,
       timeSinceStart: this.getSecondsSinceStart(globalStartTime, startTime),
     }
@@ -206,6 +218,7 @@ export default class Timeline extends React.PureComponent {
       label: 'empty',
       value: value > 0 ? value : 1,
       color: '#FFFFFF',
+      startTime: startTime,
       endTime: endTime,
       timeSinceStart: this.getSecondsSinceStart(globalStartTime, endTime)
       // warnings: result['nr.warnings'] ? result['nr.warnings'] : false,
@@ -218,14 +231,111 @@ export default class Timeline extends React.PureComponent {
     return (current - start) / 1000
   }
 
-  render() {
-    const { data, loading, legend, legendClick, showWarningsOnly } = this.props
+  convertEvent = (timelineEvent, globalMinTime, globalMaxTime, filterStartOffset, filterEndOffset, newTimeline) => {
+    const eventStart = timelineEvent.startTime
+    const eventEnd = timelineEvent.endTime
 
-    const streams = this.buildGauges(data)
+    const adjustedGlobalStart = globalMinTime + filterStartOffset
+    const adjustedGlobalEnd = globalMinTime + filterEndOffset
+
+    console.log(eventStart)
+    console.log(eventEnd)
+    console.log(adjustedGlobalStart)
+    console.log(adjustedGlobalEnd)
+
+    if (eventEnd <= adjustedGlobalStart) {
+      console.log('event before scope')
+      //event ends before filter start
+      //do nothing
+      return;
+    } else if (eventStart >= adjustedGlobalEnd) {
+      console.log('event after scope')
+      //event starts after filter end
+      //do nothing
+      return;
+    } 
+    
+    var newStart;
+    var newEnd;
+    if (eventStart < adjustedGlobalStart && eventEnd < adjustedGlobalEnd) {
+      console.log('event front scope')
+      //Event starts before filter start but ends before filter end
+      //truncate event start time to minimum
+      //subtract starting offset from end
+      newStart = adjustedGlobalStart 
+      newEnd = eventEnd - filterStartOffset 
+    } else if (eventStart >= adjustedGlobalStart && eventEnd < adjustedGlobalEnd) {
+      console.log('event in scope')
+      //event starts after filter start and ends before filter end
+      //subtract starting offset from start time
+      //subtract starting offset from end
+      newStart = eventStart - filterStartOffset
+      newEnd = eventEnd - filterStartOffset
+    } else if (eventStart > filterStartOffset && eventEnd > filterEndOffset) {
+      console.log('event back scope')
+      //event starts after filter start but ends after filter end
+      //subtract starting offest from start time
+      //truncate event end time to maximum
+      newStart = eventStart - filterStartOffset 
+      newEnd = adjustedGlobalEnd
+    }
+
+    const newEvent = {
+      label: timelineEvent.label,
+      value: newEnd - newStart,
+      color: timelineEvent.color,
+      startTime: newStart,
+      endTime: newEnd,
+      timeSinceStart: this.getSecondsSinceStart(adjustedGlobalStart, newStart),
+    }
+
+    console.log(newEvent)
+
+    newTimeline.push(newEvent);
+  }
+
+  filterStreams = (streams, filterStartTime, filterEndTime) => {
+    let newEvents = []
+    
+    for (let i = 0; i < streams.events.length; i++) {
+      const newStream = []
+      streams.events[i].forEach((streamLine) => {
+        let newLine = []
+        streamLine.events.forEach((e) =>
+          this.convertEvent( e, 
+          streams.globalMinTime, streams.globalMaxTime, 
+          filterStartTime, filterEndTime, 
+          newLine))
+        if (newLine.length) {
+          newStream.push({
+            events: newLine,
+            lastTimestamp: streamLine.lastTimestamp,
+            buffering: false
+          })
+        }
+      })
+      newEvents.push(newStream)
+    }
+
+    return { 
+      events: newEvents, 
+      globalMaxTime: (filterEndTime > streams.globalMaxTime) ? streams.globalMaxTime : streams.globalMinTime+filterEndTime, 
+      globalMinTime : streams.globalMinTime+filterStartTime
+    }
+  }
+
+  render() {
+    const { data, loading, legend, legendClick, showWarningsOnly, filterStartTime, filterEndTime } = this.props
+
+    const rawStreams = this.buildGauges(data)
+
+    const streams = this.filterStreams(rawStreams, filterStartTime, filterEndTime)
+
+    console.log(streams)
 
     const gaugeContent = loading ? (
       <Spinner />
-    ) : !loading && streams.length > 0 ? (
+    ) : !loading && streams.events.length > 0 ? (
       <Stack
         fullWidth
         directionType={Stack.DIRECTION_TYPE.VERTICAL}
@@ -234,7 +344,7 @@ export default class Timeline extends React.PureComponent {
         spacingType={Stack.SPACING_TYPE.OMIT}
         gapType={Stack.GAP_TYPE.NONE}
       >
-        {streams[0].map(line => { return (
+        {streams.events[0].map(line => { return (
           <StackItem grow fullWidth shrink>
             <Gauge
               data={line.events }
@@ -244,11 +354,13 @@ export default class Timeline extends React.PureComponent {
               legend={legend}
               legendClick={legendClick}
               showWarningsOnly={showWarningsOnly}
+              globalMaxTime={streams.globalMaxTime}
+              globalMinTime={streams.globalMinTime}
               // title='Player Events'
             />
           </StackItem>
         )})}
-        {streams[1].map(line => { return (
+        {streams.events[1].map(line => { return (
           <StackItem grow fullWidth shrink>
             <Gauge
               data={line.events }
@@ -258,48 +370,28 @@ export default class Timeline extends React.PureComponent {
               legend={legend}
               legendClick={legendClick}
               showWarningsOnly={showWarningsOnly}
+              globalMaxTime={streams.globalMaxTime}
+              globalMinTime={streams.globalMinTime}
               // title='Request Events'
             />
           </StackItem>
         )})}
-        {streams[2].map((line, index) => { return (
+        {streams.events[2].map((line, index) => { return (
           <StackItem grow fullWidth shrink >
             <Gauge
               data={line.events}
               height={20}
-              showLegend={streams[2].length -1 == index}
-              showAxis={streams[2].length -1 == index}
+              showLegend={streams.events[2].length -1 == index}
+              showAxis={streams.events[2].length -1 == index}
               legend={legend}
               legendClick={legendClick}
               showWarningsOnly={showWarningsOnly}
+              globalMaxTime={streams.globalMaxTime}
+              globalMinTime={streams.globalMinTime}
               // title='CDN Events'
             />
           </StackItem>
         )})}
-        {/* <StackItem grow >
-          <Gauge
-            data={streams[1] }
-            height={25}
-            showLegend={false}
-            showAxis={false}
-            legend={legend}
-            legendClick={legendClick}
-            showWarningsOnly={showWarningsOnly}
-            title='Requests'
-          />
-        </StackItem>
-        <StackItem grow >
-          <Gauge
-            data={streams[2] }
-            height={25}
-            showLegend={true}
-            showAxis={true}
-            legend={legend}
-            legendClick={legendClick}
-            showWarningsOnly={showWarningsOnly}
-            title='CDN Logs'
-          />
-        </StackItem> */}
       </Stack>
     ) : (
       <Stack

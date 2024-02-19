@@ -24,7 +24,7 @@ const GaugeDataValue = props => {
     <div
       className={`gaugeItem Gauge-series-${labelClass}`}
       style={{
-        width: `${displayValue}%`,
+        width: `${displayValue}px`,
         backgroundColor: `${backgroundColor}`,
         zIndex: arrayLength - index,
         borderTop: `${border}`,

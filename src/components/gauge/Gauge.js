@@ -41,6 +41,7 @@ export default class Gauge extends Component {
 
   proportionateValues = () => {
     const { data, legend, height } = this.props
+    const gaugeWidth = 2300
     const totalValue = data.reduce((acc, { value }) => {
       acc += value
       return acc
@@ -49,6 +50,7 @@ export default class Gauge extends Component {
     return data.map(({ value, label, color, warnings }, index) => {
       const displayColor = color || this.generateColor(index, data.length)
       const proportionateValue = (value * 100) / totalValue
+      const pixWidth = Math.ceil(proportionateValue * gaugeWidth)
       const { showWarningsOnly } = this.props
 
       let visible = true
@@ -63,7 +65,8 @@ export default class Gauge extends Component {
         }
 
       return {
-        value: proportionateValue,
+        // value: proportionateValue, //if change this, have to change GaugeDataValue back from px to %
+        value: pixWidth,
         label,
         color: displayColor,
         height,
@@ -83,27 +86,27 @@ export default class Gauge extends Component {
     return `hsl(${hue},${defaultSaturation}%,${appliedLightness}%)`
   }
 
-  renderTimeAxis(data) {
-    const numberOfAxisValues = 6 
+  renderTimeAxis(data, globalMaxTime, globalMinTime) {
+    const numberOfAxisValues = 12 
     const desiredAxisItems = [...Array(numberOfAxisValues).keys()]
 
     const timeValues = data.map(d => d.endTime)
-    const maxTime = Math.ceil(timeValues[timeValues.length - 1])
-    console.log(maxTime)
-    const minTime = Math.ceil(timeValues[0])
-    console.log(minTime)
-    const intervalSize = (maxTime - minTime) / numberOfAxisValues
-    console.log(intervalSize)
+    const maxTime = globalMaxTime//Math.ceil(timeValues[timeValues.length - 1])
+    // console.log(maxTime)
+    const minTime = globalMinTime//Math.ceil(timeValues[0])
+    // console.log(minTime)
+    const intervalSize = Math.ceil((maxTime - minTime) / numberOfAxisValues)
+    // console.log(intervalSize)
 
-    const timeAxisValues = desiredAxisItems.map(a => minTime + (a + 1) * intervalSize)
-    console.log(timeAxisValues)
+    const timeAxisValues = desiredAxisItems.map(a => /*minTime + */(a + 1) * intervalSize)
+    // console.log(timeAxisValues)
     return timeAxisValues
   }
 
   render() {
-    const { data, height, showLegend, legend, legendClick, title, showAxis } = this.props
+    const { data, height, showLegend, legend, legendClick, title, showAxis , globalMaxTime, globalMinTime} = this.props
     const displayData = this.proportionateValues()
-    const timeAxisValues = this.renderTimeAxis(data)
+    const timeAxisValues = this.renderTimeAxis(data, globalMaxTime, globalMinTime)
 
     return (
       <div className="Gauge">

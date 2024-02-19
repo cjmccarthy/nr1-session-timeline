@@ -42,19 +42,33 @@ export default class EventStream extends React.Component {
     const {
       config: { eventTitleAttributes },
     } = this.props
-    const title = eventTitleAttributes.find(
+    var title = eventTitleAttributes.find(
       attr => attr.name === event.eventType
     )
 
-    if (title)
-      return this.truncateTitle(
-        event[title.primary] || event[title.secondary],
-        title.truncateStart || false
-      )
+
+    if (title) {
+      if (event.actionName === 'CDN_Log') {
+        return this.truncateTitle(
+          `RID: ${event.rid ? event.rid : 'none'}, Duration: ${event.time_to_last_byte_ms} Host: ${event.host} , URI: ${event['cs-uri-stem']}`,
+          title.truncateStart || false
+        )
+      } else if (event.actionName === 'custom_http_request') {
+        return this.truncateTitle(
+          `RID: ${event.rid ? event.rid : 'none'}, Duration: ${event.end-event.start} URL: ${event['url']}`,
+          title.truncateStart || false
+        )
+      } else {
+        return this.truncateTitle(
+          event[title.primary] || event[title.secondary],
+          title.truncateStart || false
+        )
+      }
+    }
   }
 
   truncateTitle = (original, truncateStart) => {
-    const maxLength = 60
+    const maxLength = 400 
 
     let truncated = original
     if (original?.length > maxLength) {
@@ -93,7 +107,11 @@ export default class EventStream extends React.Component {
     const { showWarningsOnly } = this.props
     const sessionEvents = []
 
+    var globalMinTime;
     data.forEach((event, i) => {
+      if (i == 0) {
+        globalMinTime = event.timestamp
+      }
       const hasWarnings = event['nr.warnings']
 
       if (!showWarningsOnly || (showWarningsOnly && hasWarnings)) {
@@ -123,10 +141,11 @@ export default class EventStream extends React.Component {
             >
               <div className="timeline-item-timestamp">
                 <span className="timeline-timestamp-date">
-                  {dayjs(date).format('MM/DD/YYYY')}
+                  {event.timestamp}
+                  {/* {dayjs(date).format('MM/DD/YYYY')} */}
                 </span>
                 <span className="timeline-timestamp-time">
-                  {dayjs(date).format('H:mm:ss.SSS')}
+                  + {event.timestamp - globalMinTime}
                 </span>
               </div>
               <div className="timeline-item-dot"></div>
