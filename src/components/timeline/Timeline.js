@@ -4,102 +4,118 @@ import Gauge from '../gauge/Gauge'
 import eventGroup from './EventGroup'
 
 export default class Timeline extends React.PureComponent {
+  chooseColor(someString) {
+    const ridColors = [
+          '#2f4f4f',
+          '#8b4513',
+          '#6b8e23',
+          '#000080',
+          '#48d1cc',
+          '#ffa500',
+          '#00ff26',
+          '#00ff00',
+          '#00fa9a',
+          '#0000ff',
+          '#ff00ff',
+          '#6495ed',
+          '#ff1493',
+          '#ffdab9',
+          '#000000'
+        ]
+    let charTotal = 0
+    for (let i = 0; i < someString.length; i++) {
+      charTotal += someString.charCodeAt(i)
+    }
+
+    return ridColors[charTotal % ridColors.length]
+  }
+
   buildGauges(data) {
-    const playerEvents = []
-    //[[], last timestamp, buffering]
+    const customEvents = []
     const requestEvents = []
-    //[[], last timestamp]
-    const cdnEvents = []
-    //[[], last timestamp]
-    const ridColors = ['#1DCAD3', '#FF8300', '#03dffc', '#9003fc', '#5fa173']
-    const activeRids = {}
+    
 
     var currentPlayerLine = 0
     var currentRequestLine = 0
-    var currentCdnLine = 0
 
     var globalStartTime = null
     var globalMaxTime = 0
 
-    const overlapProtectionMs = 100
-    const playerEventMinMs = 100
+    const overlapProtectionMs = 0
 
     data.forEach(result => {
       const sessionGroup = eventGroup(result.eventAction)
-      if (sessionGroup.name === 'DATAZOOM') {
+      if (sessionGroup.name === 'CUSTOM') {
+        // console.log(result)
         if(!globalStartTime) {
           globalStartTime = result.timestamp
         } 
 
-        if (result.timestamp > globalMaxTime) {
-          globalMaxTime = result.timestamp
+        var resultDuration;
+        if (result['Time Elapsed'] > 0 ) {
+          resultDuration = result['Time Elapsed']
+        }  else {
+          resultDuration = result.duration*1000
         }
 
-        if (playerEvents.length == 0) {
-          playerEvents.push({ events : [], lastTimestamp : globalStartTime, buffering : false})
-          if (globalStartTime != result.timestamp) {
-            this.addEmptySpace(globalStartTime, result.timestamp, globalStartTime, playerEvents[0].events)
-            //TODO: -1 hack to try to not init 2 rows on first run
-            playerEvents[0].lastTimestamp = result.timestamp-1
+        if (result.timestamp + resultDuration > globalMaxTime) {
+          globalMaxTime = result.timestamp + resultDuration
+        }
+
+        // if (customEvents.length == 0) {
+        //   customEvents.push({ events : [], lastTimestamp : globalStartTime})
+        //   if (globalStartTime != result.timestamp) {
+        //     // this.addEmptySpace(globalStartTime, result.timestamp, globalStartTime, customEvents[0].events)
+        //     //TODO: -1 hack to try to not init 2 rows on first run
+        //     // customEvents[0].lastTimestamp = result.timestamp-1
+        //   }
+        // } 
+
+        //search for the first available line
+        var availableLine = -1
+        customEvents.forEach((lineData, line) => {
+          //current event is after the last event on a line
+          if ((customEvents[line].lastTimestamp < result.timestamp)) {
+            availableLine = line
           }
-        } 
-
-        //need to search all lines for the buffering one and reset to lowest open
-        if (result.actionName === 'buffer_end')
-        {
-          //search for buffering event line
-          playerEvents.forEach((result, line) => {
-            if (playerEvents[line].buffering) {
-              currentPlayerLine = line
-            }
-          })
-          //fill it with buffer color instead of space
-          this.addToTimeline(globalStartTime, result.timestamp,
-            playerEvents[currentPlayerLine].lastTimestamp, sessionGroup, playerEvents[currentPlayerLine].events, '#1CE783')
-          //toggle buffer state
-          playerEvents[currentPlayerLine].buffering = false
-          playerEvents[currentPlayerLine].lastTimestamp = result.timestamp + overlapProtectionMs
-
+        })
+        //if none is available, create a new line
+        if (availableLine == -1) {
+          customEvents.push({ events : [], lastTimestamp : globalStartTime})
+          currentPlayerLine = customEvents.length-1
+          //fill with empty space from the beginning
+          this.addEmptySpace(globalStartTime, result.timestamp, globalStartTime, customEvents[currentPlayerLine].events)
         } else {
-          //search for the first available line
-          var availableLine = -1
-          playerEvents.forEach((lineData, line) => {
-            //current event is after the last event on a line and that line is not buffering
-            if ((playerEvents[line].lastTimestamp < result.timestamp) && !playerEvents[line].buffering) {
-              availableLine = line
-            }
-          })
-          //if none is available, create a new line
-          if (availableLine == -1) {
-            playerEvents.push({ events : [], lastTimestamp : globalStartTime, buffering : false})
-            currentPlayerLine = playerEvents.length-1
-            //fill with empty space from the beginning
-            this.addEmptySpace(globalStartTime, result.timestamp, globalStartTime, playerEvents[currentPlayerLine].events)
-          } else {
-            currentPlayerLine = availableLine
-            //TODO: check if this inserts extra whitespace on first event
-            this.addEmptySpace(globalStartTime, result.timestamp, playerEvents[currentPlayerLine].lastTimestamp, playerEvents[currentPlayerLine].events)
-          }
-          if (result.actionName === 'buffer_start') {
-            playerEvents[currentPlayerLine].buffering = true
-            playerEvents[currentPlayerLine].lastTimestamp = result.timestamp + playerEventMinMs + overlapProtectionMs
-            this.addToTimeline(globalStartTime, result.timestamp + playerEventMinMs,
-               result.timestamp, sessionGroup, playerEvents[currentPlayerLine].events, '#1CE783')
-          } else {
-            playerEvents[currentPlayerLine].lastTimestamp = result.timestamp + playerEventMinMs + overlapProtectionMs
-            this.addToTimeline(globalStartTime, result.timestamp + playerEventMinMs, result.timestamp, sessionGroup, playerEvents[currentPlayerLine].events)
-            this.addEmptySpace(globalMaxTime, result.timestamp + playerEventMinMs + overlapProtectionMs, result.timestamp + playerEventMinMs , playerEvents[currentPlayerLine].events )
-          }
-
-          
+          currentPlayerLine = availableLine
+          //TODO: check if this inserts extra whitespace on first event
+          this.addEmptySpace(globalStartTime, result.timestamp, customEvents[currentPlayerLine].lastTimestamp, customEvents[currentPlayerLine].events)
         }
 
-      } else if (sessionGroup.name === 'HTTP_REQUEST') {
+        customEvents[currentPlayerLine].lastTimestamp = result.timestamp + resultDuration + overlapProtectionMs
+        this.addToTimeline(globalStartTime, result.timestamp + resultDuration, result.timestamp, sessionGroup, customEvents[currentPlayerLine].events)
+        if (globalMaxTime > resultDuration + result.timestamp)
+          this.addEmptySpace(globalMaxTime, result.timestamp + resultDuration + overlapProtectionMs, result.timestamp, customEvents[currentPlayerLine].events )
+          
+
+      } else if (sessionGroup.name === 'AJAX' || sessionGroup.name === 'REQUEST') {
         if(!globalStartTime) {
           globalStartTime = result.timestamp
         } 
-        if (result.end > globalMaxTime) {
-          globalMaxTime = result.end
+
+        var resultDuration;
+        // var requestUrl;
+        if (sessionGroup.name === 'AJAX') {
+          resultDuration = 1000*result.timeToLoadEventStart
+          // requestUrl = result.requestUrl
+        } else {
+          resultDuration = 1000*result.duration
+
+        }
+
+        const resultEnd = result.timestamp + resultDuration
+
+        if (resultEnd > globalMaxTime) {
+          globalMaxTime = resultEnd
         }
 
         if (requestEvents.length == 0) {
@@ -129,57 +145,16 @@ export default class Timeline extends React.PureComponent {
           //TODO: check if this inserts extra whitespace on first event
           this.addEmptySpace(globalStartTime, result.timestamp, requestEvents[currentRequestLine].lastTimestamp, requestEvents[currentRequestLine].events)
         }
-        requestEvents[currentRequestLine].lastTimestamp = result.end + overlapProtectionMs
-        if (result.url.includes('penthera')) {
-          this.addToTimeline(globalStartTime, result.end, result.timestamp, sessionGroup, requestEvents[currentRequestLine].events, '#660bb5')
-        } else {
-          this.addToTimeline(globalStartTime, result.end, result.timestamp, sessionGroup, requestEvents[currentRequestLine].events)
-        }
-        this.addEmptySpace(globalMaxTime, result.end + overlapProtectionMs, result.end, requestEvents[currentRequestLine].events )
+
+        requestEvents[currentRequestLine].lastTimestamp = resultEnd + overlapProtectionMs
+        this.addToTimeline(globalStartTime, resultEnd, result.timestamp, sessionGroup, requestEvents[currentRequestLine].events, this.chooseColor(result.requestUrl))
+        this.addEmptySpace(globalMaxTime, resultEnd + overlapProtectionMs, resultEnd, requestEvents[currentRequestLine].events )
  
-      } else if (sessionGroup.name === 'CDN') {
-        if(!globalStartTime) {
-          globalStartTime = result.timestamp
-        } 
-        if (result.client_ts_ms > globalMaxTime) {
-          globalMaxTime = result.client_ts_ms
-        }
-
-        if (cdnEvents.length == 0) {
-          cdnEvents.push({ events : [], lastTimestamp : globalStartTime})
-          if (globalStartTime != result.timestamp) {
-            this.addEmptySpace(globalStartTime, result.timestamp, globalStartTime, cdnEvents[0].events)
-            //TODO: -1 hack to try to not init 2 rows on first event
-            cdnEvents[0].lastTimestamp = result.client_ts_ms-1
-          }
-        } 
-
-        let availableLine = -1
-        cdnEvents.forEach((lineData, line) => {
-          //current event is after the last event on a line
-          if (cdnEvents[line].lastTimestamp < result.timestamp ) {
-            availableLine = line
-          }
-        })
-        //if none is available, create a new line
-        if (availableLine == -1) {
-            cdnEvents.push({ events : [], lastTimestamp : globalStartTime})
-            currentCdnLine = cdnEvents.length-1
-            //fill with empty space from the beginning
-            this.addEmptySpace(globalStartTime, result.timestamp, globalStartTime, cdnEvents[currentCdnLine].events)
-        } else {
-          currentCdnLine = availableLine
-          //TODO: check if this inserts extra whitespace on first event
-          this.addEmptySpace(globalStartTime, result.timestamp, cdnEvents[currentCdnLine].lastTimestamp, cdnEvents[currentCdnLine].events)
-        }
-        cdnEvents[currentCdnLine].lastTimestamp = result.client_ts_ms + overlapProtectionMs
-        this.addToTimeline(globalStartTime, result.client_ts_ms, result.timestamp, sessionGroup, cdnEvents[currentCdnLine].events)
-        this.addEmptySpace(globalStartTime, result.client_ts_ms + overlapProtectionMs, result.client_ts_ms, cdnEvents[currentCdnLine].events )
-      }
-      
+      }      
     })
 
-    playerEvents.forEach(line => {
+
+    customEvents.forEach(line => {
       if (line.lastTimestamp < globalMaxTime) {
         this.addEmptySpace(globalStartTime, globalMaxTime, line.lastTimestamp, line.events)
       }
@@ -189,13 +164,8 @@ export default class Timeline extends React.PureComponent {
         this.addEmptySpace(globalStartTime, globalMaxTime, line.lastTimestamp, line.events)
       }
     })
-    cdnEvents.forEach(line => {
-      if (line.lastTimestamp < globalMaxTime) {
-        this.addEmptySpace(globalStartTime, globalMaxTime, line.lastTimestamp, line.events)
-      }
-    })
 
-    return { events: [playerEvents, requestEvents, cdnEvents], globalMaxTime: globalMaxTime, globalMinTime : globalStartTime}
+    return { events: [customEvents, requestEvents], globalMaxTime: globalMaxTime, globalMinTime : globalStartTime}
   }
 
   addToTimeline(globalStartTime, endTime, startTime, sessionGroup, timeline, overrideColor) {
@@ -235,48 +205,54 @@ export default class Timeline extends React.PureComponent {
     const eventStart = timelineEvent.startTime
     const eventEnd = timelineEvent.endTime
 
+    // console.log(timelineEvent)
+
     const adjustedGlobalStart = globalMinTime + filterStartOffset
     const adjustedGlobalEnd = globalMinTime + filterEndOffset
 
-    console.log(eventStart)
-    console.log(eventEnd)
-    console.log(adjustedGlobalStart)
-    console.log(adjustedGlobalEnd)
+    
 
     if (eventEnd <= adjustedGlobalStart) {
-      console.log('event before scope')
       //event ends before filter start
       //do nothing
+      // console.log('event before scope')
       return;
     } else if (eventStart >= adjustedGlobalEnd) {
-      console.log('event after scope')
       //event starts after filter end
       //do nothing
+      // console.log('event after scope')
       return;
     } 
     
     var newStart;
     var newEnd;
-    if (eventStart < adjustedGlobalStart && eventEnd < adjustedGlobalEnd) {
-      console.log('event front scope')
+    if (eventStart < adjustedGlobalStart && eventEnd <= adjustedGlobalEnd) {
       //Event starts before filter start but ends before filter end
       //truncate event start time to minimum
       //subtract starting offset from end
+      console.log('event overlaps beginning scope')
       newStart = adjustedGlobalStart 
-      newEnd = eventEnd - filterStartOffset 
-    } else if (eventStart >= adjustedGlobalStart && eventEnd < adjustedGlobalEnd) {
-      console.log('event in scope')
+
+      //TODO check
+      newEnd = eventEnd
+    } else if (eventStart >= adjustedGlobalStart && eventEnd <= adjustedGlobalEnd) {
       //event starts after filter start and ends before filter end
       //subtract starting offset from start time
       //subtract starting offset from end
-      newStart = eventStart - filterStartOffset
-      newEnd = eventEnd - filterStartOffset
-    } else if (eventStart > filterStartOffset && eventEnd > filterEndOffset) {
-      console.log('event back scope')
+      console.log('event totally in scope')
+      newStart = eventStart// - filterStartOffset
+      newEnd = eventEnd// - filterStartOffset
+    } else if (eventStart >= adjustedGlobalStart && eventEnd >= adjustedGlobalEnd) {
+      console.log('event overlaps end scope')
       //event starts after filter start but ends after filter end
       //subtract starting offest from start time
       //truncate event end time to maximum
-      newStart = eventStart - filterStartOffset 
+      newStart = eventStart
+      newEnd = adjustedGlobalEnd
+
+    } else if (eventStart <= adjustedGlobalStart && eventEnd >= adjustedGlobalEnd) {
+      console.log('event totally overlaps')
+      newStart = adjustedGlobalStart
       newEnd = adjustedGlobalEnd
     }
 
@@ -289,9 +265,12 @@ export default class Timeline extends React.PureComponent {
       timeSinceStart: this.getSecondsSinceStart(adjustedGlobalStart, newStart),
     }
 
+
+    console.log(`event start ${eventStart} event end ${eventEnd}`)
+    console.log(`new global start ${adjustedGlobalStart} new global end ${adjustedGlobalEnd}`)
     console.log(newEvent)
 
-    newTimeline.push(newEvent);
+    if (newEvent.value) newTimeline.push(newEvent);
   }
 
   filterStreams = (streams, filterStartTime, filterEndTime) => {
@@ -310,7 +289,6 @@ export default class Timeline extends React.PureComponent {
           newStream.push({
             events: newLine,
             lastTimestamp: streamLine.lastTimestamp,
-            buffering: false
           })
         }
       })
@@ -330,7 +308,6 @@ export default class Timeline extends React.PureComponent {
     const rawStreams = this.buildGauges(data)
 
     const streams = this.filterStreams(rawStreams, filterStartTime, filterEndTime)
-
     console.log(streams)
 
     const gaugeContent = loading ? (
@@ -360,35 +337,20 @@ export default class Timeline extends React.PureComponent {
             />
           </StackItem>
         )})}
-        {streams.events[1].map(line => { return (
+        {streams.events[1].map((line, index) => { return (
           <StackItem grow fullWidth shrink>
             <Gauge
               data={line.events }
               height={20}
-              showLegend={false}
-              showAxis={false}
+              showLegend={streams.events[1].length - 1 == index}
+              showAxis={streams.events[1].length - 1 == index}
               legend={legend}
               legendClick={legendClick}
               showWarningsOnly={showWarningsOnly}
               globalMaxTime={streams.globalMaxTime}
               globalMinTime={streams.globalMinTime}
+              filterOffset={filterStartTime}
               // title='Request Events'
-            />
-          </StackItem>
-        )})}
-        {streams.events[2].map((line, index) => { return (
-          <StackItem grow fullWidth shrink >
-            <Gauge
-              data={line.events}
-              height={20}
-              showLegend={streams.events[2].length -1 == index}
-              showAxis={streams.events[2].length -1 == index}
-              legend={legend}
-              legendClick={legendClick}
-              showWarningsOnly={showWarningsOnly}
-              globalMaxTime={streams.globalMaxTime}
-              globalMinTime={streams.globalMinTime}
-              // title='CDN Events'
             />
           </StackItem>
         )})}

@@ -17,7 +17,13 @@ export default class TimelineContainer extends React.Component {
     warningCount: 0,
     showWarningsOnly: false,
     startTime: 0,
-    endTime: Number.MAX_SAFE_INTEGER,
+    endTime: 120000,
+  }
+
+  constructor(props) {
+    super(props)
+
+    this.setFilter = this.setFilter.bind(this)
   }
 
   async componentDidUpdate() {
@@ -41,13 +47,9 @@ export default class TimelineContainer extends React.Component {
             eventType.name,
             linkingAttributeClause
           )
-          // if (eventType.name === 'Datazoom') {
-          if (false) {
-            // const { cdnResult, totalWarnings } = await this.getCdnData(result)
-            // data = data.concat([].concat(cdnResult, result))
-          } else {
-            data = data.concat(result)
-          }
+
+          data = data.concat(result)
+
           if (totalWarnings > 0) {
             warnings = true
             warningCount += totalWarnings
@@ -55,10 +57,12 @@ export default class TimelineContainer extends React.Component {
         }
 
         data = data.filter(Boolean)
-        console.log(data)
         data = sortBy(data, 'timestamp')
-
-        //console.log(data)
+        console.log(data[0])
+        console.log(data[1])
+        // const maxTime = data[-1].timestamp
+        // const minTime = data[0].timestamp
+        // data = data.filter((d) => d.timestamp < minTime + 120000)
 
         const legend = this.getLegend(data)
         this.setState({
@@ -77,14 +81,7 @@ export default class TimelineContainer extends React.Component {
     const { entityGuid: guid, accountId, sessionDate, duration } = this.props
 
     var query;
-    //console.log(eventType)
-    if (eventType === 'Datazoom'){
-      query = `SELECT * from ${eventType} WHERE dateOf(timestamp) = '${sessionDate}' and ${linkingAttributeClause} ORDER BY timestamp ASC LIMIT MAX ${duration.since}`
-      // console.log(query)
-    } 
-    else {
-      query = `SELECT * from ${eventType} WHERE entityGuid = '${guid}' and dateOf(timestamp) = '${sessionDate}' and ${linkingAttributeClause} ORDER BY timestamp ASC LIMIT MAX ${duration.since}`
-    }
+    query = `SELECT * from ${eventType} WHERE entityGuid = '${guid}' and dateOf(timestamp) = '${sessionDate}' and ${linkingAttributeClause} ORDER BY timestamp ASC LIMIT MAX ${duration.since}`
 
     const { data } = await NrqlQuery.query({ accountIds: [accountId], query })
 
@@ -103,68 +100,11 @@ export default class TimelineContainer extends React.Component {
           totalWarnings++
         }
 
-        if (event['actionName'] === 'CDN_Log' ) {
-          if (event['rid']) {
-            if (seenRids.indexOf(event['rid']) >= 0) {
-              return
-            } else {
-              // console.log(event.timestamp)
-              // console.log(event['time_to_last_byte_ms'])
-              event['timestamp'] = event['client_ts_ms'] - event['time_to_last_byte_ms']
-              // console.log(event.timestamp)
-              seenRids.push(event['rid'])
-            }
-          }
-        }  else if (event['actionName'] === 'custom_http_request') {
-          event['timestamp'] = event['start']
-        } else if (event['eventType'] === 'Datazoom') {
-          event['timestamp'] = event['client_ts_ms']
-        }
-
         return event
       })
 
     return { result, totalWarnings }
   }
-
-  // getCdnData = async (dzData) => {
-  //   const { entityGuid: guid, accountId, sessionDate, duration } = this.props
-
-  //   const clientIp = dzData[0].client_ip
-  //   const minTimestamp = dzData[0]['timestamp']
-  //   const maxTimestamp = dzData[dzData.length - 1]['timestamp']
-  //   const eventType = 'Datazoom'
-
-  //   const cdnQuery = `SELECT * from Datazoom WHERE dateOf(timestamp) = '${sessionDate}' and actionName = 'CDN_Log' and (rid is null OR rid = '' OR sid is null OR sid = '') AND client_ip = '${clientIp}' ORDER BY timestamp ASC LIMIT MAX SINCE ${minTimestamp} UNTIL ${maxTimestamp}`
-
-  //   const { data } = await NrqlQuery.query({ accountIds: [accountId], query: cdnQuery })
-
-  //   let totalWarnings = 0
-  //   let cdnResult = []
-  //   if (data && data.length > 0) {
-  //     cdnResult = data[0].data.map(event => {
-  //       event['eventType'] = eventType
-  //       event['eventAction'] = this.getEventAction(event, eventType)
-
-  //       const warnings = this.getWarningConditions(event, eventType)
-  //       if (warnings && warnings.length > 0) {
-  //         event['nr.warnings'] = true
-  //         event['nr.warningConditions'] = warnings
-  //         totalWarnings++
-  //       }
-
-  //       if (event['eventType'] === 'Datazoom') {
-  //           event['timestamp'] = event['timestamp']-event['client_ts_ms']
-  //         if (event['actionName'] === 'custom_http_request') {
-  //           event['timestamp'] = event['start']
-  //         }
-  //       }
-  //       return event
-  //     })
-  //   }
-
-  //   return { cdnResult, totalWarnings }
-  // }
 
   getLinkingClause = async () => {
     const {
@@ -238,9 +178,7 @@ export default class TimelineContainer extends React.Component {
 
   getEventAction = (event, eventType) => {
     let action = ''
-    if (event['actionName'] === 'CDN_Log') action = 'CDN_Log'
-    else if (event['actionName'] === 'custom_http_request') action = 'custom_http_request'
-    else if (eventType !== 'BrowserInteraction') action = eventType
+    if (eventType !== 'BrowserInteraction') action = eventType
     else
       action =
         event.category === 'Custom' ? 'Custom Interaction' : event.category
@@ -248,10 +186,10 @@ export default class TimelineContainer extends React.Component {
     return action
   }
 
+
   getLegend = data => {
     const legend = []
     for (let row of data) {
-      // console.log(row)
       const group = eventGroup(row.eventAction)
       const found = legend.filter(item => item.group.name === group.name)
 
@@ -265,16 +203,18 @@ export default class TimelineContainer extends React.Component {
 
   onChangeStartTime = event => {
     let startTime = parseInt(event.target.value, 10)
-    if (startTime != NaN) {
+    if (startTime !== NaN && startTime >= 0) {
       this.setState({startTime})
     }
   }
 
   onChangeEndTime = event => {
     let endTime = parseInt(event.target.value, 10)
-    if (endTime != NaN) {
-      this.setState({endTime})
+    if (endTime !== NaN) {
+      const newEnd = Math.min(endTime, 120000)
+      this.setState({endTime : newEnd})
     }
+    
   }
 
   onClickLegend = legendItem => {
@@ -310,6 +250,18 @@ export default class TimelineContainer extends React.Component {
   onToggleWarnings = () => {
     const { showWarningsOnly } = this.state
     this.setState({ showWarningsOnly: !showWarningsOnly })
+  }
+
+  setFilter = (startTime, endTime) => {
+    console.log('resetting filter')
+    console.log(startTime)
+    console.log(endTime)
+    this.setState({startTime, endTime})
+  }
+
+  setFilterE = (e, startTime, endTime) => {
+    e.preventDefault()
+    this.setFilter(startTime,endTime)
   }
 
   render() {
@@ -362,12 +314,19 @@ export default class TimelineContainer extends React.Component {
                 placeholder="e.g 0" 
                 defaultValue='0'
                 onChange={this.onChangeStartTime}
+                value={startTime}
               />
               <TextField 
                 description="End Time (ms)" 
                 placeholder="e.g 5124"
+                value={endTime}
                 onChange={this.onChangeEndTime}
               />
+              <Button
+                onClick={(e) => this.setFilterE(e, 0, Number.MAX_SAFE_INTEGER)}
+              >
+                Reset Filters
+              </Button>
             </StackItem>
             <StackItem className="timeline__stack-item stack__header">
               <div>
@@ -407,6 +366,9 @@ export default class TimelineContainer extends React.Component {
                 legend={legend}
                 showWarningsOnly={showWarningsOnly}
                 config={config}
+                filterStartTime={startTime}
+                filterEndTime={endTime}
+                setFilter={this.setFilter}
               />
             </StackItem>
           </Stack>

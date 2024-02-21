@@ -125,6 +125,7 @@ class SearchResults extends React.Component {
     } = this.props
     const query = `FROM ${event} SELECT uniques(${groupingAttribute}) WHERE ${searchAttribute}='${selected}' ${duration.since} FACET dateOf(timestamp) LIMIT MAX `
 
+
     return (
       <React.Fragment>
         {!selected && <div></div>}

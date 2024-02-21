@@ -7,8 +7,35 @@ export default class EventStream extends React.Component {
   state = {
     expandedTimelineItem: null,
   }
+      
+  chooseColor(someString) {
+    const ridColors = [
+          '#2f4f4f',
+          '#8b4513',
+          '#6b8e23',
+          '#000080',
+          '#48d1cc',
+          '#ffa500',
+          '#00ff26',
+          '#00ff00',
+          '#00fa9a',
+          '#0000ff',
+          '#ff00ff',
+          '#6495ed',
+          '#ff1493',
+          '#ffdab9',
+          '#000000'
+        ]
+    let charTotal = 0
+    for (let i = 0; i < someString.length; i++) {
+      charTotal += someString.charCodeAt(i)
+    }
+
+    return ridColors[charTotal % ridColors.length]
+  }
 
   handleTimelineItemClick = e => {
+    //if it's a custom event, change the filter boundaries
     e.preventDefault()
     const { expandedTimelineItem } = this.state
 
@@ -48,19 +75,14 @@ export default class EventStream extends React.Component {
 
 
     if (title) {
-      if (event.actionName === 'CDN_Log') {
+      if (event.eventAction === 'AjaxRequest') {
         return this.truncateTitle(
-          `RID: ${event.rid ? event.rid : 'none'}, Duration: ${event.time_to_last_byte_ms} Host: ${event.host} , URI: ${event['cs-uri-stem']}`,
-          title.truncateStart || false
-        )
-      } else if (event.actionName === 'custom_http_request') {
-        return this.truncateTitle(
-          `RID: ${event.rid ? event.rid : 'none'}, Duration: ${event.end-event.start} URL: ${event['url']}`,
+          `Duration: ${event.timeToLoadEventStart}, URL: ${event.requestUrl}`,
           title.truncateStart || false
         )
       } else {
         return this.truncateTitle(
-          event[title.primary] || event[title.secondary],
+          event['Name'] || event[title.primary] || event[title.secondary],
           title.truncateStart || false
         )
       }
@@ -103,7 +125,21 @@ export default class EventStream extends React.Component {
     )
   }
 
-  buildStream = (data, legend) => {
+  handleSetFilter = (e, event, globalMinTime, setFilterFunc) => {
+    // console.log(event.eventAction)
+    e.preventDefault()
+    if (event.eventAction === 'Custom Interaction') {// || event.eventAction === 'MobileRequest') {
+      var resultDuration;
+      if (event['Time Elapsed'] > 0 ) {
+        resultDuration = event['Time Elapsed']
+      } else {
+        resultDuration = event.duration*1000
+      }
+      setFilterFunc(event.timestamp - globalMinTime - 100, event.timestamp + resultDuration - globalMinTime + 100)
+    }
+  }
+
+  buildStream = (data, legend, filterStartTime, filterEndTime, setFilter) => {
     const { showWarningsOnly } = this.props
     const sessionEvents = []
 
@@ -112,6 +148,7 @@ export default class EventStream extends React.Component {
       if (i == 0) {
         globalMinTime = event.timestamp
       }
+
       const hasWarnings = event['nr.warnings']
 
       if (!showWarningsOnly || (showWarningsOnly && hasWarnings)) {
@@ -126,11 +163,11 @@ export default class EventStream extends React.Component {
           legendItem = legend.find(item => item.group.name === 'GENERAL')
 
         const date = new Date(event.timestamp)
-        let open =
-          this.state.expandedTimelineItem == i ? 'timeline-item-expanded' : ''
         const streamTimeline = this.buildStreamTimeline(event)
-
+        let open = this.state.expandedTimelineItem == i ? 'timeline-item-expanded' : ''
+        let inScope = (event.timestamp > globalMinTime + filterStartTime && event.timestamp < globalMinTime + filterEndTime)
         legendItem &&
+          inScope &&
           legendItem.visible &&
           sessionEvents.push(
             <div
@@ -139,7 +176,10 @@ export default class EventStream extends React.Component {
               onClick={this.handleTimelineItemClick}
               className={`timeline-item ${legendItem.group.eventDisplay.class} ${open}`}
             >
-              <div className="timeline-item-timestamp">
+              <div 
+                className="timeline-item-timestamp"
+                onClick={(e) => this.handleSetFilter(e, event, globalMinTime, setFilter)}
+              >
                 <span className="timeline-timestamp-date">
                   {event.timestamp}
                   {/* {dayjs(date).format('MM/DD/YYYY')} */}
@@ -161,10 +201,14 @@ export default class EventStream extends React.Component {
                     <Icon
                       className="timeline-item-symbol-icon"
                       type={legendItem.group.eventDisplay.icon}
-                      color={legendItem.group.eventDisplay.color}
+                      color={legendItem.group.name === 'REQUEST' || legendItem.group.name === 'AJAX' ? this.chooseColor(event.requestUrl) : legendItem.group.eventDisplay.color }
                     ></Icon>
                   </div>
-                  <div className="timeline-item-title">
+                  <div className="timeline-item-title"
+                      style={
+                      {color : legendItem.group.name === 'REQUEST' || legendItem.group.name === 'AJAX' ? this.chooseColor(event.requestUrl) : legendItem.group.eventDisplay.color }
+                      }
+                  >
                     {startCase(event.eventAction)}:{' '}
                     <span className="timeline-item-title-detail">
                       {this.getTitleDetails(event)}
@@ -196,9 +240,9 @@ export default class EventStream extends React.Component {
   }
 
   render() {
-    const { data, loading, legend } = this.props
+    const { data, loading, legend, filterStartTime, filterEndTime, setFilter} = this.props
 
-    const stream = this.buildStream(data, legend)
+    const stream = this.buildStream(data, legend, filterStartTime, filterEndTime, setFilter)
 
     const eventContent = loading ? (
       <Spinner />

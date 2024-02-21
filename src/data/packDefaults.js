@@ -3,7 +3,7 @@ export default [
     type: 'BROWSER',
     searchAttribute: '',
     rootEvent: 'BrowserInteraction',
-    groupingAttribute: 'app_sid',
+    groupingAttribute: 'session',
     linkingAttribute: '',
     timelineEventTypes: [
       { name: 'PageView', selected: false },
@@ -11,7 +11,6 @@ export default [
       { name: 'AjaxRequest', selected: true },
       { name: 'JavaScriptError', selected: true },
       { name: 'BrowserTiming', selected: true },
-      { name: 'Datazoom', selected: true },
     ],
     eventTitleAttributes: [
       {

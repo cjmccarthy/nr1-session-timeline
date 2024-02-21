@@ -86,27 +86,23 @@ export default class Gauge extends Component {
     return `hsl(${hue},${defaultSaturation}%,${appliedLightness}%)`
   }
 
-  renderTimeAxis(data, globalMaxTime, globalMinTime) {
+  renderTimeAxis(data, globalMaxTime, globalMinTime, filterOffset) {
     const numberOfAxisValues = 12 
     const desiredAxisItems = [...Array(numberOfAxisValues).keys()]
 
     const timeValues = data.map(d => d.endTime)
     const maxTime = globalMaxTime//Math.ceil(timeValues[timeValues.length - 1])
-    // console.log(maxTime)
     const minTime = globalMinTime//Math.ceil(timeValues[0])
-    // console.log(minTime)
     const intervalSize = Math.ceil((maxTime - minTime) / numberOfAxisValues)
-    // console.log(intervalSize)
 
-    const timeAxisValues = desiredAxisItems.map(a => /*minTime + */(a + 1) * intervalSize)
-    // console.log(timeAxisValues)
+    const timeAxisValues = desiredAxisItems.map(a => filterOffset + (a + 1) * intervalSize)
     return timeAxisValues
   }
 
   render() {
-    const { data, height, showLegend, legend, legendClick, title, showAxis , globalMaxTime, globalMinTime} = this.props
+    const { data, height, showLegend, legend, legendClick, title, showAxis , globalMaxTime, globalMinTime, filterOffset} = this.props
     const displayData = this.proportionateValues()
-    const timeAxisValues = this.renderTimeAxis(data, globalMaxTime, globalMinTime)
+    const timeAxisValues = this.renderTimeAxis(data, globalMaxTime, globalMinTime, filterOffset)
 
     return (
       <div className="Gauge">
